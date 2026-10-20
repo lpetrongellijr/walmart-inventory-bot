@@ -43,7 +43,6 @@ jobs:
 
           payload = {
             "product_id": "15308304145",
-            "store_id": "2817",
             "delivery_zip": "60451",
             "domain": "com"
           }
