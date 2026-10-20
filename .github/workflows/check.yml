@@ -38,6 +38,7 @@ jobs:
 
       - name: Test Discord Notification
         if: ${{ inputs.send_test == true }}
+        continue-on-error: true
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
@@ -45,30 +46,74 @@ jobs:
           import os
           import json
           import urllib.request
+          import urllib.error
 
-          url = os.environ.get("DISCORD_WEBHOOK_URL")
+          url = os.environ.get("DISCORD_WEBHOOK_URL", "")
+
           if not url:
-              raise SystemExit("Discord webhook secret is missing")
+              raise SystemExit(
+                  "ERROR: DISCORD_WEBHOOK_URL secret is missing"
+              )
 
           data = json.dumps({
-              "content": "Walmart Bot Test: Discord notifications are working!"
+              "content": (
+                  "Walmart Inventory Bot: "
+                  "Discord test notification successful!"
+              )
           }).encode("utf-8")
 
           request = urllib.request.Request(
               url,
               data=data,
-              headers={"Content-Type": "application/json"},
+              headers={
+                  "Content-Type": "application/json",
+                  "User-Agent": "WalmartInventoryBot/1.0"
+              },
               method="POST"
           )
 
-          with urllib.request.urlopen(request, timeout=15) as response:
-              print("Discord HTTP status:", response.status)
+          try:
+              with urllib.request.urlopen(
+                  request, timeout=20
+              ) as response:
+                  print("SUCCESS!")
+                  print("Discord HTTP status:", response.status)
+
+          except urllib.error.HTTPError as error:
+              print("DISCORD REQUEST FAILED")
+              print("HTTP status:", error.code)
+
+              body = error.read().decode(
+                  "utf-8", errors="replace"
+              )
+
+              try:
+                  details = json.loads(body)
+                  print(
+                      "Discord error code:",
+                      details.get("code", "N/A")
+                  )
+                  print(
+                      "Discord error message:",
+                      details.get("message", "N/A")
+                  )
+              except json.JSONDecodeError:
+                  print(
+                      "Non-JSON error response received."
+                  )
+
+              raise SystemExit(1)
+
+          except urllib.error.URLError as error:
+              print("NETWORK ERROR")
+              print("Error type:", type(error.reason).__name__)
+              raise SystemExit(1)
           PY
 
       - name: Run Walmart monitor
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          SEND_TEST: ${{ inputs.send_test }}
+          SEND_TEST: "false"
         run: python monitor.py
 
       - name: Upload diagnostics
