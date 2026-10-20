@@ -1,3 +1,36 @@
+name: Test Discord Notification
+env:
+  DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+run: |
+  python - <<'PY'
+  import os
+  import json
+  import urllib.request
+
+  url = os.environ.get("DISCORD_WEBHOOK_URL")
+
+  if not url:
+      raise Exception("Discord webhook secret is missing!")
+
+  data = json.dumps({
+      "content": "Walmart Bot Test: Discord notifications are working!"
+  }).encode("utf-8")
+
+  request = urllib.request.Request(
+      url,
+      data=data,
+      headers={
+          "Content-Type": "application/json",
+          "User-Agent": "WalmartInventoryBot/1.0"
+      },
+      method="POST"
+  )
+
+    with urllib.request.urlopen(request, timeout=15) as response:
+        print("Discord response:", response.status)
+    PY
+
+
 
 name: Walmart Blackstone Check
 
