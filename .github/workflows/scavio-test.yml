@@ -23,9 +23,10 @@ jobs:
           SHIPPING_ZIP = "60451"
 
           payload = {
-              "product_id": PRODUCT_ID,
-              "delivery_zip": SHIPPING_ZIP,
-              "domain": "com"
+            "product_id": "15308304145",
+            "store_id": "4529",
+            "delivery_zip": "60451",
+            "domain": "com"
           }
 
           request = urllib.request.Request(
