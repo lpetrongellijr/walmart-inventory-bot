@@ -1,160 +1,125 @@
 
-name: Scavio Walmart API Test
+name: Scavio Shipping Test
 
 on:
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 jobs:
-  test-scavio:
+  test-shipping:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
 
     steps:
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Test Scavio Walmart Product API
+      - name: Test Walmart shipping availability
         env:
           SCAVIO_API_KEY: ${{ secrets.SCAVIO_API_KEY }}
         run: |
-          python - <<'PY'
-          import os
+          python3 <<'PY'
           import json
+          import os
           import urllib.request
           import urllib.error
-          from datetime import datetime, timezone
 
-          api_key = os.environ.get("SCAVIO_API_KEY", "")
-
-          if not api_key:
-              raise SystemExit(
-                  "Missing SCAVIO_API_KEY GitHub secret"
-              )
-
-          endpoint = (
-              "https://api.scavio.dev"
-              "/api/v1/walmart/product"
-          )
+          PRODUCT_ID = "15308304145"
+          SHIPPING_ZIP = "60451"
 
           payload = {
-            "product_id": "15308304145",
-            "delivery_zip": "60451",
-            "domain": "com"
+              "product_id": PRODUCT_ID,
+              "delivery_zip": SHIPPING_ZIP,
+              "domain": "com"
           }
 
           request = urllib.request.Request(
-              endpoint,
+              "https://api.scavio.dev/api/v1/walmart/product",
               data=json.dumps(payload).encode("utf-8"),
               headers={
-                  "Authorization": "Bearer " + api_key,
+                  "Authorization": f"Bearer {os.environ['SCAVIO_API_KEY']}",
                   "Content-Type": "application/json",
-                  "Accept": "application/json"
+                  "Accept": "application/json",
+                  "User-Agent": "WalmartShippingMonitor/1.0"
               },
               method="POST"
           )
 
           try:
               with urllib.request.urlopen(
-                  request, timeout=120
+                  request, timeout=60
               ) as response:
-                  result = json.load(response)
+                  data = json.load(response)
 
           except urllib.error.HTTPError as error:
-              print("Scavio HTTP error:", error.code)
-              raise SystemExit(
-                  "API request failed. No response body saved."
-              )
+              print(f"API ERROR: HTTP {error.code}")
+              print(error.read().decode("utf-8")[:1000])
+              raise
 
-          except urllib.error.URLError as error:
-              print("Scavio network request failed")
-              raise SystemExit(1)
+          # Support common API response structures.
+          product = data.get("data", data)
+          if isinstance(product, dict):
+              product = product.get("product", product)
 
-          data = result.get("data", {})
-          if not isinstance(data, dict):
-              raise SystemExit("Unexpected API response format")
+          if not isinstance(product, dict):
+              raise ValueError("Unexpected API response format")
 
-          location = data.get("location") or {}
+          location = product.get("location") or {}
+          fulfillment = product.get("fulfillment") or {}
+
           if not isinstance(location, dict):
               location = {}
+          if not isinstance(fulfillment, dict):
+              fulfillment = {}
 
-          fulfillment = data.get("fulfillment") or {}
-
-          # Save only selected product information.
-          # Never save the API key or request headers.
-          output = {
-              "checked_at_utc": datetime.now(
-                  timezone.utc
-              ).isoformat(),
-              "requested": payload,
-              "product": {
-                  "id": data.get("id"),
-                  "title": data.get("title"),
-                  "price": data.get("price"),
-                  "currency": data.get("currency"),
-                  "out_of_stock": data.get("out_of_stock"),
-                  "availability_status": data.get(
-                      "availability_status"
-                  ),
-                  "location": location,
-                  "fulfillment": fulfillment,
-                  "url": data.get("url")
-              },
-              "credits_used": result.get("credits_used"),
-              "credits_remaining": result.get(
-                  "credits_remaining"
-              )
-          }
-
-          with open(
-              "scavio-result.json", "w", encoding="utf-8"
-          ) as file:
-              json.dump(output, file, indent=2)
-
-          print("SCAVIO TEST RESULTS")
-          print("===================")
-          print("Product:", data.get("title"))
-          print("Product ID:", data.get("id"))
-          print("Price:", data.get("price"))
-          print("Availability:", data.get(
-              "availability_status"
-          ))
-          print("Out of stock:", data.get("out_of_stock"))
-          print("Location:", json.dumps(location))
-          print("Fulfillment:", json.dumps(fulfillment))
-          print("Credits used:", result.get("credits_used"))
-          print("Credits left:", result.get(
-              "credits_remaining"
-          ))
-
-          store_matches = (
-              str(location.get("store_id")) == "2817"
+          returned_zip = str(
+              location.get("zipcode")
+              or location.get("zip_code")
+              or ""
           )
 
-          price = data.get("price")
-          price_matches = (
-              isinstance(price, (int, float))
-              and not isinstance(price, bool)
-              and 105.45 <= price <= 116.55
+          shipping = fulfillment.get("shipping")
+          shipping_info = fulfillment.get(
+              "shipping_information"
           )
 
-          print("===================")
-          print("Correct store:", store_matches)
-          print("Price in target range:", price_matches)
+          print()
+          print("SCAVIO SHIPPING TEST")
+          print("====================")
+          print(f"Product ID: {PRODUCT_ID}")
+          print(f"Requested shipping ZIP: {SHIPPING_ZIP}")
+          print(f"Returned location: {location}")
+          print(f"Shipping available: {shipping}")
+          print(f"Shipping information: {shipping_info}")
           print(
-              "Shipping: requires fulfillment review"
+              "Out of stock:",
+              fulfillment.get("out_of_stock")
           )
-          print("Purchase alert: DISABLED")
-          PY
 
-      - name: Upload Scavio JSON
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: scavio-walmart-result
-          path: scavio-result.json
-          retention-days: 7
+          print()
+          print("VERIFICATION")
+          print("============")
+
+          zip_matches = returned_zip == SHIPPING_ZIP
+
+          print(f"ZIP matches: {zip_matches}")
+
+          if zip_matches and shipping is True:
+              print(
+                  "RESULT: API reports shipping available "
+                  "for the requested ZIP."
+              )
+          elif zip_matches and shipping is False:
+              print(
+                  "RESULT: API reports shipping unavailable "
+                  "for the requested ZIP."
+              )
+          elif not zip_matches:
+              print(
+                  "RESULT: Shipping destination NOT verified. "
+                  "API returned a different or missing ZIP."
+              )
+          else:
+              print(
+                  "RESULT: Shipping availability inconclusive."
+              )
+
+          print()
+          print("Purchase alert: DISABLED")
+          print("No Discord notification will be sent.")
+          PY
